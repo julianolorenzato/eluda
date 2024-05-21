@@ -22,12 +22,12 @@ defmodule Eluda do
   @doc """
   The main macro
   """
-  defmacro eluda({:<-, _, [_var, enumerable]} = generator, [do: expr] = statement) do
+  defmacro eluda({:<-, _, [var_symbol, enumerable]} = generator, [do: expr] = statement) do
     IO.inspect(enumerable, label: "list: ")
     IO.inspect(expr, label: "expr: ")
 
     quote do
-      code = Transpiler.transpile(unquote(expr))
+      code = Transpiler.transpile(unquote(expr), unquote(var_symbol))
 
       File.write("./priv/generated_code.c", code)
 
@@ -39,6 +39,10 @@ defmodule Eluda do
         "priv/generated_code.so",
         "priv/generated_code.c"
       ])
+
+      # Retornar a chamada para a NIF que executará o LOOP em C
+      # Algo como:
+      # Eluda.kernel_nif(ponteiro_para_a_lista)
     end
   end
 end

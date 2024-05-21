@@ -1,3 +1,7 @@
-float kernel(float value) {
-  return 2*3+4;
+float *kernel(float *data) {
+  for (int i = 0; i < ??; i++) {
+    data[i] = ((data[i]*2)+5);
+  }
+
+  return data;
 }
