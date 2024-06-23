@@ -21,9 +21,9 @@ defmodule Eluda.Transpiler do
   @doc """
   Transpile
   """
-  defmacro transpile(expr_ast, {var_symbol, _, _}) do
+  def transpile(expr_ast, var_symbol, fun_name) do
     """
-    float *kernel(float *data, u_int32_t data_length) {
+    float *#{fun_name}(float *data, int data_length) {
       for (int i = 0; i < data_length; i++) {
         data[i] = #{walk(expr_ast, var_symbol)};
       }

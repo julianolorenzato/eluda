@@ -1,1 +1,0 @@
-float *kernel(float *data, u_int32_t data_length);
