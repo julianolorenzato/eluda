@@ -8,37 +8,37 @@ defmodule Eluda do
   @on_load :load_nifs
 
   def load_nifs() do
-    :erlang.load_nif(~c"./c_src/eluda", 0)
+    :erlang.load_nif(~c"./priv/c_dest/eluda_nifs", 0)
   end
 
-  def loop_nif(_list) do
-    raise "loop_nif/0 was not implemented!"
-  end
-
-  def obj_nif() do
-    raise "obj_nif/0 was not implemented!"
+  def device_alloc_nif(_binary) do
+    raise "device_alloc_nif/1 was not implemented!"
   end
 
   @doc """
   The main macro
-  """
-  defmacro eluda({:<-, _, [var_symbol, enumerable]} = generator, [do: expr] = statement) do
-    IO.inspect(enumerable, label: "list: ")
-    IO.inspect(expr, label: "expr: ")
 
+  ex: device(n <- [1, 2, 3], do: n * 2)
+  """
+  defmacro device({:<-, _, [var_symbol, matrex]}, [do: expr]) do
     quote do
       code = Transpiler.transpile(unquote(expr), unquote(var_symbol))
 
-      File.write("./priv/generated_code.c", code)
+      File.write("./priv/c_src/kernel.c", code)
 
       # Compilation
       System.cmd("gcc", [
         "-fPIC",
         "-shared",
         "-o",
-        "priv/generated_code.so",
-        "priv/generated_code.c"
+        "priv/c_dest/kernel.so",
+        "priv/c_src/kernel.c"
       ])
+
+      %Matrex{data: data} = unquote(matrex)
+      ref = Eluda.device_alloc_nif(data)
+
+      # load_fun; load_kernel
 
       # Retornar a chamada para a NIF que executará o LOOP em C
       # Algo como:

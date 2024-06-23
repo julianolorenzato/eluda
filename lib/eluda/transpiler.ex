@@ -23,8 +23,8 @@ defmodule Eluda.Transpiler do
   """
   defmacro transpile(expr_ast, {var_symbol, _, _}) do
     """
-    float *kernel(float *data) {
-      for (int i = 0; i < ??; i++) {
+    float *kernel(float *data, u_int32_t data_length) {
+      for (int i = 0; i < data_length; i++) {
         data[i] = #{walk(expr_ast, var_symbol)};
       }
 
