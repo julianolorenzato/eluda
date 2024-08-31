@@ -21,7 +21,8 @@ defmodule Eluda.MixProject do
   # Run "mix help deps" to learn about dependencies.
   defp deps do
     [
-      {:matrex, "~> 0.6.8"}
+      {:matrex, "~> 0.6.8"},
+      {:nx, "~> 0.7.3"}
     ]
   end
 end
