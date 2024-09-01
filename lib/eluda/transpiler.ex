@@ -3,8 +3,7 @@ defmodule Eluda.Transpiler do
   Responsible for transpiling Elixir arithmetic expressions to C/CUDA.
   """
 
-  alias Eluda.ScopeInfo
-  alias Eluda.GeneratorInfo
+  alias Eluda.Transpiler.Transpilation
 
   @allowed_operators [:+, :-, :*, :/]
   @indent "  "
@@ -12,106 +11,118 @@ defmodule Eluda.Transpiler do
   @doc """
   Transpile
   """
-  @spec transpile(any(), [GeneratorInfo.t()], list(), charlist()) :: String.t()
-  def transpile(expr_ast, infos, scope_vars, fun_name) do
+  @spec transpile(any()) :: String.t()
+  def transpile(expr_ast) do
+    fun_name = Transpilation.unique_name()
+    gen_vars = Transpilation.gen_vars() |> Enum.reverse()
+
     """
     void #{fun_name}(float *dest, float **src, int *sizes, float **aux, int *sizes_aux) {
     #{@indent}i = 0;
-    #{build_nested_loops(expr_ast, infos, infos, scope_vars)}}
+    #{build_nested_loops(expr_ast, gen_vars)}}
     """
   end
 
-  @spec build_nested_loops(any(), [GeneratorInfo.t()], [GeneratorInfo.t()], [ScopeInfo.t()]) ::
-          String.t()
-  defp build_nested_loops(expr_ast, infos, infos, scope_vars)
+  @spec build_nested_loops(any(), list()) :: String.t()
+  defp build_nested_loops(expr_ast, gen_vars)
 
-  defp build_nested_loops(expr_ast, [], infos, scope_vars) do
-    indent = String.duplicate(@indent, length(infos) + 1)
+  defp build_nested_loops(expr_ast, []) do
+    indent = String.duplicate(@indent, length(Transpilation.gen_vars()) + 1)
 
     """
-    #{indent}dest[i] = #{walk(expr_ast, infos, scope_vars)};
+    #{indent}dest[i] = #{walk(expr_ast)};
     #{indent}i++;
     """
   end
 
-  defp build_nested_loops(expr_ast, [info | rest], infos, scope_vars) do
-    indent = String.duplicate(@indent, info.index + 1)
+  defp build_nested_loops(expr_ast, [{_var_symbol, _tensor_symbol, i} = gen_var | rest]) do
+    indent = String.duplicate(@indent, i + 1)
 
     """
-    #{indent}#{for_signature(info)} {
-    #{build_nested_loops(expr_ast, rest, infos, scope_vars)}#{indent}}
+    #{indent}#{for_signature(gen_var)} {
+    #{build_nested_loops(expr_ast, rest)}#{indent}}
     """
   end
 
-  @spec for_signature(GeneratorInfo.t()) :: String.t()
-  defp for_signature(info) do
-    case info do
-      %GeneratorInfo{index: index, range: start..finish//step} ->
-        "for (int k#{index} = #{start}; k#{index} < #{finish}; k#{index} += #{step})"
+  @spec for_signature(tuple()) :: String.t()
+  defp for_signature(gen_var) do
+    case gen_var do
+      {_var_symbol, start..finish//step, i} ->
+        "for (int k#{i} = #{start}; k#{i} < #{finish}; k#{i} += #{step})"
 
-      %GeneratorInfo{index: index, range: start..finish} ->
-        "for (int k#{index} = #{start}; k#{index} < #{finish}; k#{index}++)"
+      {_var_symbol, start..finish, i} ->
+        "for (int k#{i} = #{start}; k#{i} < #{finish}; k#{i}++)"
 
-      %GeneratorInfo{index: index, range: nil} ->
-        "for (int k#{index} = 0; k#{index} < sizes[#{index}]; k#{index}++)"
+      {_var_symbol, tensor_symbol, i} when is_atom(tensor_symbol) ->
+        if not valid_scope_symbol?(tensor_symbol) do
+          raise "invalid token '#{tensor_symbol}' in generator, is not in the scope"
+        end
+
+        "for (int k#{i} = 0; k#{i} < sizes[#{i}]; k#{i}++)"
     end
   end
 
   # Walks through the abstract syntax tree, checking the nodes and carrying out the respective treatments.
-  @spec walk(any(), [GeneratorInfo.t()], [ScopeInfo.t()]) :: String.t()
-  defp walk(value, _, _) when is_number(value), do: to_string(value)
+  @spec walk(any()) :: String.t()
+  defp walk(value) when is_number(value), do: to_string(value)
 
-  defp walk({operator, _, [arg1, arg2]}, infos, scope_vars)
-       when operator in @allowed_operators do
-    "(" <>
-      walk(arg1, infos, scope_vars) <>
-      to_string(operator) <> walk(arg2, infos, scope_vars) <> ")"
+  defp walk({operator, _, [arg1, arg2]}) when operator in @allowed_operators do
+    "(" <> walk(arg1) <> to_string(operator) <> walk(arg2) <> ")"
   end
 
-  # Scope symbols (Access protocol)
-  defp walk({{:., _, [Access, :get]}, _, [{token, _, _}, index]}, infos, scope_vars) do
-    res = Enum.find(scope_vars, fn symbol -> token == symbol end)
-
-    if is_nil(res) do
-      raise "index '#{token}' not found!"
+  # Access protocol, var index - vet[j]
+  defp walk({{:., _, [Access, :get]}, _, [{tensor_symbol, _, _}, {index_symbol, _, _}]}) do
+    # verify if 'j' is a generator var if not raises an error
+    if not valid_gen_symbol?(index_symbol) do
+      raise "invalid token '#{index_symbol}' in expression, is neither a generator var or number"
     end
 
-    case index do
-      {atom, _, _} when is_atom(atom) ->
-        nil
-
-      num when is_integer(num) ->
-
+    # verify if 'vet' is in scope if not raises an error, mark 'vet' as used otherwise
+    if not valid_scope_symbol?(tensor_symbol) do
+      raise "invalid token '#{tensor_symbol}' in expression, is not in the scope"
+    else
+      Transpilation.mark_used_scope_var(tensor_symbol)
     end
 
+    "#{tensor_symbol}[#{index_symbol}]"
+  end
 
-    # case res do
-    #   sym_atom when is_atom(sym_atom) ->
-    #     Enum.reduce(rest, "aux", fn {s, _, _}, acc ->
-    #       r = Enum.find(infos, fn %GeneratorInfo{symbol: sym} -> s == sym end)
+  # Access protocol, number index - vet[3]
+  defp walk({{:., _, [Access, :get]}, _, [{tensor_symbol, _, _}, i]}) when is_integer(i) do
 
-    #       if is_nil(r) do
-    #         raise "index '#{s}' not found!"
-    #       else
-    #         acc <> "[#{s}]"
-    #       end
-    #     end)
+    # verify if 'vet' is in scope if not raises an error, mark 'vet' as used otherwise
+    if not valid_scope_symbol?(tensor_symbol) do
+      raise "invalid token '#{tensor_symbol}' in expression, is not in the scope"
+    else
+      Transpilation.mark_used_scope_var(tensor_symbol)
+    end
 
-    #   nil ->
-    #     raise "Wht?"
-    # end
+    "#{tensor_symbol}[#{i}]"
   end
 
   # Generator symbols
-  defp walk({token, _, _}, infos, _scope_vars) do
-    res = Enum.find(infos, fn %GeneratorInfo{symbol: symbol} -> token == symbol end)
+  defp walk({token, _, _}) do
+    res =
+      Transpilation.gen_vars()
+      |> Enum.find(fn {symbol, _, _} -> token == symbol end)
 
     case res do
-      %GeneratorInfo{index: index} ->
-        "src[#{index}][k#{index}]"
+      {_symbol, _tensor, i} ->
+        "src[#{i}][k#{i}]"
 
       nil ->
-        raise "invalid token '#{token}', only the following operators are allowed: #{inspect(@allowed_operators)}"
+        raise "invalid token '#{token}' in expression, only the following operators are allowed: #{inspect(@allowed_operators)}"
     end
+  end
+
+  # have interrogation but is not returning boolean for all results
+  defp valid_gen_symbol?(symbol) do
+    Transpilation.gen_vars()
+    |> Enum.find(false, fn {gen_index, _, _} -> gen_index == symbol end)
+  end
+
+  defp valid_scope_symbol?(symbol) do
+    Transpilation.scope_vars()
+    |> Enum.find(false, fn {var, _} -> symbol == var end)
   end
 end

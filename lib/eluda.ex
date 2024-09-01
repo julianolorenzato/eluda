@@ -4,6 +4,7 @@ defmodule Eluda do
   alias Eluda.ScopeInfo
   alias Eluda.Transpiler
   alias Eluda.GeneratorInfo
+  alias Eluda.Transpiler.Transpilation
 
   @on_load :load_nifs
 
@@ -52,26 +53,23 @@ defmodule Eluda do
 
   """
   defmacro device({:<-, _meta, [_left, right]} = generator, do: expr) do
-    unique_name = ~c"f#{:erlang.phash2(:erlang.unique_integer())}"
+    Transpilation.start_link()
+
+    Transpilation.set_unique_name()
 
     # passar as scope_vars para o transpiler e depois de descobrir quais são usadas é q deve fazer o scope_info de cada uma
-    scope_vars =
-      __CALLER__
-      |> Macro.Env.vars()
-      |> Enum.map(fn {k, _} -> k end)
-      # |> Enum.map(fn {k, _} -> %ScopeInfo{symbol: k} end)
-      # |> Enum.with_index(&%ScopeInfo{&1 | index: &2})
 
-    IO.inspect(scope_vars, label: "SCOPE VARS")
+    __CALLER__
+    |> Macro.Env.vars()
+    |> Enum.map(fn {k, _} -> {k, false} end)
+    |> Enum.each(&Transpilation.add_scope_var/1)
 
-    info =
-      generator
-      |> handle_generator()
-      |> (&%GeneratorInfo{&1 | index: 0}).()
+    [generator]
+    |> Enum.map(&handle_generator/1)
+    |> Enum.with_index(fn {a, b}, i -> {a, b, i} end)
+    |> Enum.each(&Transpilation.add_gen_var/1)
 
-    IO.inspect(info, label: "INFO")
-
-    transpiled = Transpiler.transpile(expr, [info], scope_vars, unique_name)
+    transpiled = Transpiler.transpile(expr)
 
     IO.puts(transpiled)
 
@@ -103,7 +101,6 @@ defmodule Eluda do
     #   __CALLER__
     #   |> Macro.Env.vars()
     #   |> Enum.map(fn {k, _} -> k end)
-
 
     infos =
       generators
@@ -155,15 +152,18 @@ defmodule Eluda do
   end
 
   defp handle_generator({:<-, _meta, [{var_symbol, _, _}, {:.., _, [start, finish]}]}) do
-    %GeneratorInfo{symbol: var_symbol, range: start..finish}
+    # %GeneratorInfo{symbol: var_symbol, range: start..finish}
+    {var_symbol, start..finish}
   end
 
   defp handle_generator({:<-, _meta, [{var_symbol, _, _}, {:"..//", _, [start, finish, step]}]}) do
-    %GeneratorInfo{symbol: var_symbol, range: start..finish//step}
+    # %GeneratorInfo{symbol: var_symbol, range: start..finish//step}
+    {var_symbol, start..finish//step}
   end
 
-  defp handle_generator({:<-, _meta, [{var_symbol, _, _}, _tensor]}) do
-    %GeneratorInfo{symbol: var_symbol, range: nil}
+  defp handle_generator({:<-, _meta, [{var_symbol, _, _}, {tensor_symbol, _, _}]}) do
+    # %GeneratorInfo{symbol: var_symbol, range: nil}
+    {var_symbol, tensor_symbol}
   end
 
   defp bind_variables(expr, vars) do
