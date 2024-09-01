@@ -36,5 +36,22 @@ defmodule Eluda.TranspilerTest do
 
       assert got == expected
     end
+
+    test "should raise error if a found token is neither a generator var, scope var or allowed operator" do
+      expr = quote do: (6 - j * n * 3) ++ (m + 3 / i - 2)
+
+      generators_info = [
+        %GeneratorInfo{index: 0, symbol: :n, range: nil},
+        %GeneratorInfo{index: 1, symbol: :i, range: 2..7},
+        %GeneratorInfo{index: 2, symbol: :m, range: nil},
+        %GeneratorInfo{index: 3, symbol: :j, range: 3..10//2}
+      ]
+
+      assert_raise RuntimeError,
+                   "invalid token '++', only the following operators are allowed: [:+, :-, :*, :/]",
+                   fn ->
+                     Transpiler.transpile(expr, generators_info, "f3598754")
+                   end
+    end
   end
 end

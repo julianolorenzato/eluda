@@ -1,6 +1,7 @@
 defmodule Eluda do
   @moduledoc false
 
+  alias Eluda.ScopeInfo
   alias Eluda.Transpiler
   alias Eluda.GeneratorInfo
 
@@ -50,7 +51,49 @@ defmodule Eluda do
   Estou tentando passar multiplos binaries para a nif, este é o problema atual
 
   """
-  defmacro device({:<-, _meta, [{var_symbol, _, _} = left, right]}, do: expr) do
+  defmacro device({:<-, _meta, [_left, right]} = generator, do: expr) do
+    unique_name = ~c"f#{:erlang.phash2(:erlang.unique_integer())}"
+
+    # passar as scope_vars para o transpiler e depois de descobrir quais são usadas é q deve fazer o scope_info de cada uma
+    scope_vars =
+      __CALLER__
+      |> Macro.Env.vars()
+      |> Enum.map(fn {k, _} -> k end)
+      # |> Enum.map(fn {k, _} -> %ScopeInfo{symbol: k} end)
+      # |> Enum.with_index(&%ScopeInfo{&1 | index: &2})
+
+    IO.inspect(scope_vars, label: "SCOPE VARS")
+
+    info =
+      generator
+      |> handle_generator()
+      |> (&%GeneratorInfo{&1 | index: 0}).()
+
+    IO.inspect(info, label: "INFO")
+
+    transpiled = Transpiler.transpile(expr, [info], scope_vars, unique_name)
+
+    IO.puts(transpiled)
+
+    quote do
+      # list = Enum.map(unq)
+      # IO.inspect(unquote(used))
+
+      # case unquote(right) do
+      #   %Matrex{data: data} ->
+      #     <<head::binary-size(8), rest::binary>> = data
+
+      #     new_data = head <> execute_nif(unquote(unique_name), [data | unquote(used)], 10)
+
+      #     %Matrex{data: new_data}
+
+      #   start..final ->
+      #     IO.inspect(execute_nif(unquote(unique_name), unquote(used)))
+
+      #     # passar todos os binaries utilizados na expressao para a memoria do dispositivo
+      #     # após, executar o kernel
+      # end
+    end
   end
 
   defmacro device(generators, do: expr) when is_list(generators) do
@@ -61,26 +104,13 @@ defmodule Eluda do
     #   |> Macro.Env.vars()
     #   |> Enum.map(fn {k, _} -> k end)
 
-    # tensors =
-    #   MapSet.new(generators, fn {:<-, _meta, [{var_symbol, _, _} = left, right]} ->
-    #     right
-    #   end)
 
-    info =
+    infos =
       generators
-      |> Enum.map(fn
-        {:<-, _meta, [{var_symbol, _, _}, {:.., _, [start, finish]}]} ->
-          %GeneratorInfo{symbol: var_symbol, range: start..finish}
-
-        {:<-, _meta, [{var_symbol, _, _}, {:"..//", _, [start, finish, step]}]} ->
-          %GeneratorInfo{symbol: var_symbol, range: start..finish//step}
-
-        {:<-, _meta, [{var_symbol, _, _}, _tensor]} ->
-          %GeneratorInfo{symbol: var_symbol, range: nil}
-      end)
+      |> Enum.map(&handle_generator/1)
       |> Enum.with_index(&%GeneratorInfo{&1 | index: &2})
 
-    IO.inspect(info)
+    IO.inspect(infos)
 
     quote do
       3
@@ -124,12 +154,16 @@ defmodule Eluda do
     # end
   end
 
-  defp handle_generator({:<-, _meta, [{left_symbol, _, _} = left, {right_symbol, _, _} = right]}) do
-    {left, right}
+  defp handle_generator({:<-, _meta, [{var_symbol, _, _}, {:.., _, [start, finish]}]}) do
+    %GeneratorInfo{symbol: var_symbol, range: start..finish}
   end
 
-  defp left({:<-, _meta, [{left_symbol, _, _}, _right]}) do
-    left_symbol
+  defp handle_generator({:<-, _meta, [{var_symbol, _, _}, {:"..//", _, [start, finish, step]}]}) do
+    %GeneratorInfo{symbol: var_symbol, range: start..finish//step}
+  end
+
+  defp handle_generator({:<-, _meta, [{var_symbol, _, _}, _tensor]}) do
+    %GeneratorInfo{symbol: var_symbol, range: nil}
   end
 
   defp bind_variables(expr, vars) do

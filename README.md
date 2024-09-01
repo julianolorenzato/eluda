@@ -2,6 +2,8 @@
 
 **TODO: Add description**
 
+- Fazer testes dos edge cases do transpiler
+
 ## Installation
 
 If [available in Hex](https://hex.pm/docs/publish), the package can be installed
