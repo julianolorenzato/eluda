@@ -54,7 +54,7 @@ defmodule Eluda.Transpiler do
         "for (int k#{i} = #{start}; k#{i} < #{finish}; k#{i}++)"
 
       {_var_symbol, tensor_symbol, i} when is_atom(tensor_symbol) ->
-        if not valid_scope_symbol?(tensor_symbol) do
+        if !valid_scope_symbol?(tensor_symbol) do
           raise "invalid token '#{tensor_symbol}' in generator, is not in the scope"
         end
 
@@ -71,27 +71,37 @@ defmodule Eluda.Transpiler do
   end
 
   # Access protocol, var index - vet[j]
-  defp walk({{:., _, [Access, :get]}, _, [{tensor_symbol, _, _}, {index_symbol, _, _}]}) do
-    # verify if 'j' is a generator var if not raises an error
-    if not valid_gen_symbol?(index_symbol) do
-      raise "invalid token '#{index_symbol}' in expression, is neither a generator var or number"
-    end
+  # defp walk({{:., _, [Access, :get]}, _, [{tensor_symbol, _, _}, {index_symbol, _, _}]}) do
+  #   # verify if 'j' is a generator var if not raises an error
+  #   if !valid_gen_symbol?(index_symbol) do
+  #     raise "invalid token '#{index_symbol}' in expression, is neither a generator var or number"
+  #   end
 
-    # verify if 'vet' is in scope if not raises an error, mark 'vet' as used otherwise
-    if not valid_scope_symbol?(tensor_symbol) do
-      raise "invalid token '#{tensor_symbol}' in expression, is not in the scope"
-    else
-      Transpilation.mark_used_scope_var(tensor_symbol)
-    end
+  #   # needs dry (already fetch gen_vars 5 lines above)
+  #   {_, _, idx} =
+  #     Transpilation.gen_vars()
+  #     |> Enum.find(fn {i_symbol, _, _} -> i_symbol == index_symbol end)
 
-    "#{tensor_symbol}[#{index_symbol}]"
-  end
+  #   {_, idx_scope} =
+  #     Transpilation.scope_vars()
+  #     |> Enum.find(fn {s, _} -> s == tensor_symbol end)
+
+  #   # verify if 'vet' is in scope if not raises an error, mark 'vet' as used otherwise
+  #   if !valid_scope_symbol?(tensor_symbol) do
+  #     raise "invalid token '#{tensor_symbol}' in expression, is not in the scope"
+  #   else
+  #     Transpilation.mark_used_scope_var(tensor_symbol)
+  #   end
+
+  #   "aux[#{idx_scope}][k#{idx}]"
+  # end
 
   # Access protocol, number index - vet[3]
   defp walk({{:., _, [Access, :get]}, _, [{tensor_symbol, _, _}, i]}) when is_integer(i) do
+    Enum.find(Transpilation.gen_vars(), fn {var, tensor, index} -> var == tensor_symbol end)
 
     # verify if 'vet' is in scope if not raises an error, mark 'vet' as used otherwise
-    if not valid_scope_symbol?(tensor_symbol) do
+    if !valid_scope_symbol?(tensor_symbol) do
       raise "invalid token '#{tensor_symbol}' in expression, is not in the scope"
     else
       Transpilation.mark_used_scope_var(tensor_symbol)

@@ -1,9 +1,7 @@
 defmodule Eluda do
   @moduledoc false
 
-  alias Eluda.ScopeInfo
   alias Eluda.Transpiler
-  alias Eluda.GeneratorInfo
   alias Eluda.Transpiler.Transpilation
 
   @on_load :load_nifs
@@ -102,12 +100,12 @@ defmodule Eluda do
     #   |> Macro.Env.vars()
     #   |> Enum.map(fn {k, _} -> k end)
 
-    infos =
-      generators
-      |> Enum.map(&handle_generator/1)
-      |> Enum.with_index(&%GeneratorInfo{&1 | index: &2})
+    # infos =
+    #   generators
+      # |> Enum.map(&handle_generator/1)
+      # |> Enum.with_index(&%GeneratorInfo{&1 | index: &2})
 
-    IO.inspect(infos)
+    # IO.inspect(infos)
 
     quote do
       3

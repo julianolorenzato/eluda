@@ -4,13 +4,13 @@ defmodule Eluda.Transpiler.Transpilation do
   defstruct [:unique_name, :gen_vars, :scope_vars]
 
   @typep gen_var() :: {atom(), Range.t() | atom(), integer()}
-  @typep scope_var() :: {atom(), boolean()}
+  @typep scope_var() :: atom()
   # @typep used_scope_var() :: {atom(), tuple()}
 
   @type t() :: %__MODULE__{
           unique_name: charlist(),
           gen_vars: [gen_var()],
-          scope_vars: [scope_var()]
+          scope_vars: MapSet.t()
           # used_scope_vars: [used_scope_var()]
         }
 
@@ -18,7 +18,7 @@ defmodule Eluda.Transpiler.Transpilation do
     %__MODULE__{
       unique_name: nil,
       gen_vars: [],
-      scope_vars: []
+      scope_vars: MapSet.new() # maybe should be better change to MapSet, key s the symbol and value is the index
       # used_scope_vars: []
     }
   end
@@ -45,7 +45,8 @@ defmodule Eluda.Transpiler.Transpilation do
   @spec add_scope_var(scope_var()) :: :ok
   def add_scope_var(var) do
     Agent.update(__MODULE__, fn %__MODULE__{} = state ->
-      Map.update!(state, :scope_vars, &[var | &1])
+      # Map.update!(state, :scope_vars, &[var | &1])
+      MapSet.put()
     end)
   end
 
@@ -53,11 +54,19 @@ defmodule Eluda.Transpiler.Transpilation do
   def mark_used_scope_var(sym) do
     Agent.update(__MODULE__, fn %__MODULE__{} = state ->
       Map.update!(state, :scope_vars, fn vars ->
-        Enum.map(vars, fn {symbol, used?} ->
-          if symbol == sym do
-            {symbol, true}
+        greatest_index = Enum.reduce(vars, -1, fn {_symbol, idx}, acc ->
+          if is_integer(idx) && idx > acc do
+            idx
           else
-            {symbol, used?}
+            acc
+          end
+        end)
+
+        Enum.map(vars, fn {symbol, _} = v ->
+          if symbol == sym do
+            {symbol, greatest_index + 1}
+          else
+            v
           end
         end)
       end)
